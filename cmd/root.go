@@ -11,7 +11,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var staged bool
+var (
+	staged  bool
+	outFile string
+)
 
 var rootCmd = &cobra.Command{
 	Use:   "justshowmediff [git diff args...]",
@@ -22,6 +25,7 @@ var rootCmd = &cobra.Command{
 
 func init() {
 	rootCmd.Flags().BoolVar(&staged, "staged", false, "show staged changes")
+	rootCmd.Flags().StringVarP(&outFile, "output", "o", "", "write HTML to file path instead of tmp")
 }
 
 func Execute() {
@@ -40,13 +44,16 @@ func run(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	path, err := internal.WriteHTML(diff)
+	path, err := internal.WriteHTML(diff, outFile)
 	if err != nil {
 		return fmt.Errorf("writing html: %w", err)
 	}
 
-	fmt.Printf("Opening %s\n", path)
-	return internal.Open(path)
+	fmt.Println(path)
+	if outFile == "" {
+		return internal.Open(path)
+	}
+	return nil
 }
 
 func getDiff(cmd *cobra.Command, args []string) (string, error) {

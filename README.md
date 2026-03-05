@@ -1,8 +1,9 @@
 # justshowmediff
 
-Show git diff in a beautiful HTML viewer. Single binary, no server, opens in your browser.
+Show git diff in a beautiful UI viewer. Single binary, no server, opens in your browser. Zero dependencies -- no JS frameworks, no CSS libraries, everything is self-contained in one HTML file.
 
 ## Install
+
 
 ```
 go install github.com/msoedov/justshowmediff@latest
@@ -48,7 +49,7 @@ justshowmediff main..feature-branch
 git diff | justshowmediff
 ```
 
-Opens an HTML file in your default browser with side-by-side diff, syntax highlighting, anti-pattern warnings, and inline comments.
+Opens an HTML file in your default browser with side-by-side diff, syntax highlighting, and inline comments.
 
 ## How it works
 
