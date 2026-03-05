@@ -43,6 +43,38 @@ Built for workflows where you don't have a full editor open:
 - **Codex / headless agents** -- when an agent writes code on your machine without an IDE, pipe the diff to get a visual review before accepting.
 - **Telegram / SSH / remote** -- working from a phone or a bare terminal? The HTML file is self-contained, share it or open it anywhere with a browser.
 
+### Readonly code review workflow
+
+You don't edit the diff -- you edit the prompt. Review the changes visually, then tell the agent what to fix. The cycle looks like:
+
+1. Agent writes code
+2. `justshowmediff` -- review in browser
+3. Tell the agent what's wrong
+4. Repeat until it looks right
+5. Commit
+
+No IDE needed. You stay in the terminal, the browser shows you what changed.
+
+### Claude Code skill
+
+Add a `/diff` slash command to Claude Code. Create `.claude/skills/diff.md`:
+
+```markdown
+When the user runs /diff, execute `justshowmediff` to open the current
+unstaged changes in a browser-based diff viewer.
+
+If the user says /diff --staged, run `justshowmediff --staged` instead.
+
+Do not commit, do not modify files. Just show the diff.
+```
+
+Then in your session:
+
+```
+> /diff
+> /diff --staged
+```
+
 ## How it works
 
 Runs `git diff`, embeds the output into a self-contained HTML file in `/tmp`, and opens it. No server needed. Mobile optimized.
