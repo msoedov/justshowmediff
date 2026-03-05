@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Diff Reviewer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --canvas: #1e1e1e;
+    --surface: #2c2c2c;
+    --surface-hover: #333;
+    --surface-raised: #383838;
+    --surface-float: #2c2c2c;
+    --border: rgba(255,255,255,0.06);
+    --border-strong: rgba(255,255,255,0.1);
+    --text-0: #fff;
+    --text-1: rgba(255,255,255,0.9);
+    --text-2: rgba(255,255,255,0.55);
+    --text-3: rgba(255,255,255,0.3);
+    --accent: #a78bfa;
+    --accent-dim: rgba(167,139,250,0.12);
+    --green: #34d399;
+    --green-bg: rgba(52,211,153,0.1);
+    --green-gutter: rgba(52,211,153,0.06);
+    --green-strong: rgba(52,211,153,0.25);
+    --red: #f87171;
+    --red-bg: rgba(248,113,113,0.1);
+    --red-gutter: rgba(248,113,113,0.06);
+    --red-strong: rgba(248,113,113,0.25);
+    --yellow: #fbbf24;
+    --yellow-bg: rgba(251,191,36,0.1);
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.25), 0 1px 3px rgba(0,0,0,0.2);
+    --shadow-lg: 0 8px 32px rgba(0,0,0,0.35), 0 2px 8px rgba(0,0,0,0.2);
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --mono: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', Menlo, monospace;
+    --sans: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  }
+
+  body {
+    font-family: var(--sans);
+    background: var(--canvas);
+    color: var(--text-1);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---- Toolbar (top) ---- */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    height: 52px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .toolbar-brand {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-2);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 0 8px;
+    white-space: nowrap;
+  }
+  .toolbar-sep {
+    width: 1px;
+    height: 20px;
+    background: var(--border);
+    flex-shrink: 0;
+  }
+
+  /* File pills */
+  .file-pills {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    flex: 1;
+    min-width: 0;
+    scrollbar-width: none;
+    padding: 2px 0;
+  }
+  .file-pills::-webkit-scrollbar { display: none; }
+  .file-pill {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 12px;
+    font-size: 12px;
+    font-family: var(--mono);
+    font-weight: 500;
+    color: var(--text-2);
+    border-radius: 100px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.12s;
+    background: transparent;
+    border: 1px solid transparent;
+  }
+  .file-pill:hover { color: var(--text-1); background: var(--surface-hover); }
+  .file-pill.active {
+    color: var(--text-0);
+    background: var(--surface-raised);
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-sm);
+  }
+  .file-pill .pill-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .pill-dot.warn { background: var(--yellow); }
+  .pill-dot.reviewed { background: var(--green); }
+  .pill-dot.reverted { background: var(--red); }
+  .file-pill .pill-stats {
+    font-size: 10px;
+    color: var(--text-3);
+    font-weight: 400;
+  }
+
+  /* Toolbar stats */
+  .toolbar-stats {
+    display: flex;
+    gap: 12px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-3);
+    padding: 0 8px;
+    white-space: nowrap;
+  }
+  .toolbar-stats .s-add { color: var(--green); }
+  .toolbar-stats .s-del { color: var(--red); }
+  .toolbar-stats .s-warn { color: var(--yellow); }
+
+  /* ---- Main ---- */
+  .main { display: flex; flex: 1; overflow: hidden; }
+
+  /* ---- Left panel ---- */
+  .panel-left {
+    width: 252px;
+    min-width: 252px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .panel-section {
+    padding: 14px;
+    border-bottom: 1px solid var(--border);
+    overflow-y: auto;
+  }
+  .panel-section.empty { display: none; }
+  .panel-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-3);
+    letter-spacing: 0.3px;
+    margin-bottom: 10px;
+  }
+
+  /* Warnings */
+  .warn-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 6px 8px;
+    margin: 1px 0;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    color: var(--yellow);
+    cursor: pointer;
+    transition: background 0.1s;
+    line-height: 1.4;
+  }
+  .warn-row:hover { background: var(--yellow-bg); }
+  .warn-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--yellow);
+    flex-shrink: 0;
+    margin-top: 5px;
+  }
+  .warn-row .warn-file {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-3);
+    display: block;
+    margin-top: 2px;
+  }
+
+  /* File list / revert */
+  .file-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 8px;
+    margin: 1px 0;
+    border-radius: var(--radius-sm);
+    transition: background 0.1s;
+  }
+  .file-row:hover { background: var(--surface-hover); }
+  .file-row-name {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-1);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .file-row-name.struck { color: var(--red); text-decoration: line-through; opacity: 0.5; }
+  .pill-btn {
+    padding: 2px 10px;
+    border-radius: 100px;
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid;
+    transition: all 0.1s;
+    white-space: nowrap;
+    flex-shrink: 0;
+    margin-left: 6px;
+    letter-spacing: 0.2px;
+  }
+  .pill-btn.revert { border-color: rgba(248,113,113,0.3); color: var(--red); background: transparent; }
+  .pill-btn.revert:hover { background: var(--red-bg); }
+  .pill-btn.undo { border-color: rgba(167,139,250,0.3); color: var(--accent); background: transparent; }
+  .pill-btn.undo:hover { background: var(--accent-dim); }
+  .revert-all {
+    margin-top: 8px;
+    padding: 6px 0;
+    border-radius: 100px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid rgba(248,113,113,0.2);
+    color: var(--red);
+    background: transparent;
+    width: 100%;
+    transition: all 0.1s;
+  }
+  .revert-all:hover { background: var(--red-bg); }
+
+  /* ---- Canvas area ---- */
+  .canvas {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+    background: var(--canvas);
+  }
+
+  /* Paste */
+  .paste-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 20;
+    background: var(--canvas);
+  }
+  .paste-overlay.hidden { display: none; }
+  .paste-card {
+    border: 2px dashed var(--border-strong);
+    border-radius: var(--radius-lg);
+    padding: 56px 72px;
+    text-align: center;
+    transition: all 0.2s;
+  }
+  .paste-card h2 { color: var(--text-1); font-size: 16px; font-weight: 500; margin-bottom: 8px; }
+  .paste-card p { color: var(--text-3); font-size: 12px; }
+  .paste-card .k {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-2);
+    margin: 0 2px;
+  }
+
+  /* Progress */
+  .progress-strip {
+    display: none;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .progress-strip.active { display: flex; }
+  .p-dots { display: flex; gap: 4px; }
+  .p-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .p-dot.reviewed { background: var(--green); }
+  .p-dot.reverted { background: var(--red); opacity: 0.5; }
+  .p-dot.current { background: var(--accent); box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--accent); }
+  .p-dot.pending { background: var(--surface-raised); border: 1px solid var(--border-strong); }
+  .p-bar { flex: 1; height: 2px; background: var(--surface-raised); border-radius: 1px; overflow: hidden; }
+  .p-bar-fill { height: 100%; background: var(--green); border-radius: 1px; transition: width 0.3s; }
+  .p-label { font-family: var(--mono); font-size: 10px; color: var(--text-3); white-space: nowrap; }
+
+  /* File context bar */
+  .ctx-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    gap: 10px;
+  }
+  .ctx-bar-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .ctx-bar-file { font-size: 12px; font-family: var(--mono); font-weight: 500; color: var(--text-1); }
+  .ctx-bar-badges { display: flex; gap: 5px; }
+  .badge-sm {
+    font-size: 10px;
+    padding: 1px 8px;
+    border-radius: 100px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+  }
+  .badge-warn { background: var(--yellow-bg); color: var(--yellow); border: 1px solid rgba(251,191,36,0.2); }
+  .badge-reverted { background: var(--red-bg); color: var(--red); border: 1px solid rgba(248,113,113,0.2); }
+  .ctx-bar-actions { display: flex; gap: 4px; }
+  .mode-btn {
+    padding: 4px 10px;
+    border-radius: 100px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text-3);
+    transition: all 0.12s;
+  }
+  .mode-btn:hover { color: var(--text-2); background: var(--surface-hover); }
+  .mode-btn.on { color: var(--accent); background: var(--accent-dim); border-color: rgba(167,139,250,0.2); }
+
+  /* Column labels */
+  .col-labels {
+    display: flex;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .col-label {
+    flex: 1;
+    padding: 4px 16px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-3);
+    letter-spacing: 0.3px;
+  }
+  .col-label:first-child { border-right: 1px solid var(--border); }
+
+  /* ---- Diff ---- */
+  .diff-scroll {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  .diff-wrap { display: flex; min-height: 100%; }
+  .diff-pane { flex: 1; min-width: 0; overflow-x: auto; }
+  .diff-pane-l { border-right: 1px solid var(--border); }
+
+  .d-line {
+    display: flex;
+    min-height: 24px;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 24px;
+    position: relative;
+    transition: opacity 0.15s;
+  }
+  .d-num {
+    width: 50px; min-width: 50px;
+    text-align: right;
+    padding-right: 10px;
+    color: var(--text-3);
+    user-select: none;
+    flex-shrink: 0;
+    font-size: 11px;
+  }
+  .d-code {
+    flex: 1;
+    padding: 0 12px;
+    white-space: pre;
+    min-width: 0;
+  }
+
+  /* Types */
+  .d-line.addition .d-code { background: var(--green-bg); border-left: 3px solid var(--green); padding-left: 9px; }
+  .d-line.addition .d-num { background: var(--green-gutter); color: var(--green); }
+  .d-line.deletion .d-code { background: var(--red-bg); border-left: 3px solid var(--red); padding-left: 9px; }
+  .d-line.deletion .d-num { background: var(--red-gutter); color: var(--red); }
+  .d-line.empty { opacity: 0.3; }
+  .d-line.empty .d-code {
+    background: repeating-linear-gradient(-45deg, transparent, transparent 4px, rgba(255,255,255,0.015) 4px, rgba(255,255,255,0.015) 8px);
+  }
+
+  /* Focus */
+  .focus-on .d-line.context { opacity: 0.25; }
+  .focus-on .d-line.context:hover { opacity: 0.8; }
+
+  /* Word diff */
+  .d-line.addition .wh { background: var(--green-strong); border-radius: 2px; padding: 0 1px; }
+  .d-line.deletion .wh { background: var(--red-strong); border-radius: 2px; padding: 0 1px; }
+
+  /* Syntax highlighting */
+  .sh-kw { color: #c084fc; }
+  .sh-str { color: #86efac; }
+  .sh-cmt { color: rgba(255,255,255,0.32); font-style: italic; }
+  .sh-num { color: #67e8f9; }
+  .sh-dec { color: #f9a8d4; }
+  .sh-bi { color: #fbbf24; }
+  .d-line.addition .sh-kw, .d-line.deletion .sh-kw { opacity: 0.85; }
+  .d-line.addition .sh-cmt, .d-line.deletion .sh-cmt { opacity: 0.7; }
+
+  /* Warning */
+  .d-line.has-warning .d-code { border-left: 3px solid var(--yellow); padding-left: 9px; }
+
+  /* Comment trigger */
+  .cmt-btn {
+    position: absolute;
+    left: 2px; top: 3px;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: none;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.1s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 5;
+  }
+  .cmt-btn::after { content: '+'; color: #fff; font-size: 13px; font-weight: 700; line-height: 1; }
+  .d-line:hover .cmt-btn { opacity: 1; }
+  .d-line.has-comment .cmt-btn { opacity: 1; }
+  .d-line.has-comment .cmt-btn::after { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #fff; }
+
+  /* Reverted overlay */
+  .reverted-view {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 10px;
+    color: var(--text-3);
+    font-size: 13px;
+  }
+  .reverted-view span { color: var(--accent); cursor: pointer; font-size: 12px; font-weight: 500; }
+  .reverted-view span:hover { text-decoration: underline; }
+
+  /* Hunk */
+  .hunk-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 16px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    background: var(--accent-dim);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    user-select: none;
+    opacity: 0.8;
+  }
+  .hunk-row::before, .hunk-row::after { content: ''; flex: 1; height: 1px; background: rgba(167,139,250,0.12); }
+
+  /* Context fold */
+  .fold-row {
+    padding: 2px 16px 2px 62px;
+    font-size: 11px;
+    color: var(--accent);
+    cursor: pointer;
+    background: var(--accent-dim);
+    border-top: 1px dashed rgba(167,139,250,0.15);
+    border-bottom: 1px dashed rgba(167,139,250,0.15);
+    user-select: none;
+    transition: background 0.1s;
+    opacity: 0.7;
+  }
+  .fold-row:hover { opacity: 1; }
+
+  /* Inline comment */
+  .cmt-inline {
+    padding: 10px 12px 10px 62px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .cmt-inline textarea {
+    width: 100%;
+    min-height: 48px;
+    background: var(--canvas);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    color: var(--text-1);
+    font-family: var(--sans);
+    font-size: 13px;
+    padding: 10px 12px;
+    resize: vertical;
+    line-height: 1.45;
+  }
+  .cmt-inline textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+  .cmt-inline textarea::placeholder { color: var(--text-3); }
+  .cmt-actions { display: flex; gap: 5px; margin-top: 8px; justify-content: flex-end; }
+  .cmt-actions button {
+    padding: 5px 14px;
+    border-radius: 100px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid var(--border-strong);
+    background: var(--surface-raised);
+    color: var(--text-2);
+    transition: all 0.1s;
+  }
+  .cmt-actions .save { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .cmt-actions .del { border-color: rgba(248,113,113,0.3); color: var(--red); background: transparent; }
+  .cmt-actions button:hover { filter: brightness(1.1); }
+
+  /* Saved comment */
+  .cmt-saved {
+    padding: 8px 12px 8px 62px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .cmt-saved-text { flex: 1; font-size: 12px; color: var(--text-2); line-height: 1.45; white-space: pre-wrap; }
+  .cmt-saved-acts { display: flex; gap: 8px; flex-shrink: 0; }
+  .cmt-saved-acts button { font-size: 11px; color: var(--text-3); background: none; border: none; cursor: pointer; padding: 2px 4px; font-weight: 500; }
+  .cmt-saved-acts button:hover { color: var(--text-1); }
+
+  /* ---- Floating bottom bar ---- */
+  .float-bar {
+    position: absolute;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: none;
+    align-items: center;
+    gap: 12px;
+    padding: 7px 16px;
+    background: var(--surface-float);
+    border: 1px solid var(--border-strong);
+    border-radius: 100px;
+    box-shadow: var(--shadow-lg);
+    z-index: 15;
+    backdrop-filter: blur(12px);
+  }
+  .float-bar.active { display: flex; }
+  .float-bar .hint {
+    font-size: 11px;
+    color: var(--text-3);
+    white-space: nowrap;
+  }
+  .float-bar .k {
+    display: inline-block;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: var(--surface-raised);
+    border: 1px solid var(--border-strong);
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-2);
+    margin: 0 1px;
+  }
+  .float-bar .sep { width: 1px; height: 16px; background: var(--border); flex-shrink: 0; }
+  .float-bar button {
+    padding: 4px 12px;
+    border-radius: 100px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid var(--border-strong);
+    background: var(--surface-raised);
+    color: var(--text-2);
+    transition: all 0.1s;
+    white-space: nowrap;
+  }
+  .float-bar button:hover { color: var(--text-1); background: var(--surface-hover); }
+
+  /* Toast */
+  .toast {
+    position: fixed;
+    bottom: 60px;
+    left: 50%;
+    transform: translateX(-50%) translateY(6px);
+    background: var(--text-0);
+    color: var(--canvas);
+    padding: 8px 20px;
+    border-radius: 100px;
+    font-size: 12px;
+    font-weight: 600;
+    opacity: 0;
+    transition: all 0.2s;
+    pointer-events: none;
+    z-index: 999;
+    box-shadow: var(--shadow-lg);
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.14); }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <span class="toolbar-brand">Diff Review</span>
+  <div class="toolbar-sep"></div>
+  <div class="file-pills" id="file-pills"></div>
+  <div class="toolbar-stats">
+    <span id="s-files">0 files</span>
+    <span class="s-add" id="s-add">+0</span>
+    <span class="s-del" id="s-del">-0</span>
+    <span class="s-warn" id="s-warn">0 warnings</span>
+  </div>
+</div>
+
+<div class="main">
+  <div class="panel-left">
+    <div class="panel-section empty" id="warn-panel"></div>
+    <div class="panel-section empty" id="files-panel"></div>
+  </div>
+
+  <div class="canvas">
+    <div class="paste-overlay" id="paste-overlay">
+      <div class="paste-card">
+        <h2>Paste a git diff</h2>
+        <p><span class="k">git diff | pbcopy</span> then <span class="k">Cmd+V</span></p>
+      </div>
+    </div>
+
+    <div class="progress-strip" id="progress-strip">
+      <div class="p-dots" id="p-dots"></div>
+      <div class="p-bar"><div class="p-bar-fill" id="p-fill"></div></div>
+      <span class="p-label" id="p-label">0/0</span>
+    </div>
+
+    <div class="ctx-bar" id="ctx-bar" style="display:none">
+      <div class="ctx-bar-left">
+        <span class="ctx-bar-file" id="ctx-file"></span>
+        <div class="ctx-bar-badges" id="ctx-badges"></div>
+      </div>
+      <div class="ctx-bar-actions">
+        <button class="mode-btn" id="mb-collapse" onclick="toggleCollapseContext()">Collapse</button>
+        <button class="mode-btn" id="mb-focus" onclick="toggleFocusMode()">Focus</button>
+      </div>
+    </div>
+
+    <div class="col-labels" id="col-labels" style="display:none">
+      <div class="col-label">Removed</div>
+      <div class="col-label">Added</div>
+    </div>
+
+    <div style="display:flex;flex:1;overflow:hidden;position:relative">
+      <div class="diff-scroll" id="diff-scroll" style="display:none">
+        <div class="diff-wrap">
+          <div class="diff-pane diff-pane-l" id="dl"></div>
+          <div class="diff-pane" id="dr"></div>
+        </div>
+      </div>
+
+      <div class="float-bar" id="float-bar">
+        <span class="hint"><span class="k">&larr;</span><span class="k">&rarr;</span> files</span>
+        <span class="hint"><span class="k">N</span> warning</span>
+        <span class="hint"><span class="k">F</span> focus</span>
+        <span class="hint"><span class="k">R</span> revert</span>
+        <div class="sep"></div>
+        <button onclick="copyRevert()">Copy revert cmd</button>
+        <button onclick="clearAll()">Reset</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const ANTI_PATTERNS = [
+  { id: 'pydantic', regex: /(?:from\s+pydantic|import\s+pydantic)/i, label: 'Pydantic (use dataclass)' },
+  { id: 'relative-import', regex: /from\s+\.\./m, label: 'Relative import' },
+  { id: 'argparse', regex: /(?:import\s+argparse|from\s+argparse)/i, label: 'Argparse' },
+  { id: 'docstring-bloat', regex: /""".{80,}"""/s, label: 'Long docstring' },
+  { id: 'emoji', regex: /[\u{1F300}-\u{1FAFF}]/u, label: 'Emoji in code' },
+  { id: 'old-typing', regex: /from\s+typing\s+import\s+(?:List|Dict|Tuple|Set|Optional|Union)/m, label: 'Old typing imports' },
+  { id: 'overengineering', regex: /(?:AbstractFactory|StrategyPattern|BaseHandler|AbstractBase)/m, label: 'Over-engineering' },
+  { id: 'config-class', regex: /class\s+\w*Config\w*.*:/m, label: 'Config class' },
+  { id: 'try-except-pass', regex: /except.*:\s*\n.*pass/m, label: 'Silent exception' },
+  { id: 'passthrough', regex: /def\s+\w+\(self[^)]*\)[^:]*:\s*\n\s*return\s+self\.\w+\.\w+\(/m, label: 'Pass-through method' },
+];
+
+let S = {
+  files: [], active: 0, comments: {}, warnings: {}, editing: null,
+  reviewed: {}, reverted: {}, focus: true, collapse: false, expanded: {},
+};
+
+function parseDiff(raw) {
+  const files = [], lines = raw.split('\n');
+  let cf = null, ch = null, ol = 0, nl = 0;
+  for (const l of lines) {
+    if (l.startsWith('diff --git')) { cf = { file:'', hunks:[], add:0, del:0 }; files.push(cf); continue; }
+    if (l.startsWith('---')) continue;
+    if (l.startsWith('+++')) { if (cf) cf.file = l.replace(/^\+\+\+\s+[ab]\//,'').replace(/^\+\+\+\s+/,''); continue; }
+    if (l.startsWith('@@')) { const m = l.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)/); if (m&&cf) { ol=+m[1]; nl=+m[2]; ch={header:l,ctx:m[3].trim(),lines:[]}; cf.hunks.push(ch); } continue; }
+    if (!ch) continue;
+    if (l.startsWith('+')) { ch.lines.push({t:'addition',o:null,n:nl,c:l.substring(1)}); nl++; if(cf)cf.add++; }
+    else if (l.startsWith('-')) { ch.lines.push({t:'deletion',o:ol,n:null,c:l.substring(1)}); ol++; if(cf)cf.del++; }
+    else if (l.startsWith('\\')) {}
+    else { ch.lines.push({t:'context',o:ol,n:nl,c:l.substring(1)}); ol++; nl++; }
+  }
+  return files;
+}
+
+function pairs(lines) {
+  const p = []; let i = 0;
+  while (i < lines.length) {
+    const l = lines[i];
+    if (l.t==='context') { p.push({l:l,r:l}); i++; }
+    else if (l.t==='deletion') {
+      const d=[],a=[];
+      while(i<lines.length&&lines[i].t==='deletion'){d.push(lines[i]);i++;}
+      while(i<lines.length&&lines[i].t==='addition'){a.push(lines[i]);i++;}
+      const mx=Math.max(d.length,a.length);
+      for(let j=0;j<mx;j++) p.push({
+        l:j<d.length?d[j]:{t:'empty',o:null,n:null,c:''},
+        r:j<a.length?a[j]:{t:'empty',o:null,n:null,c:''},
+      });
+    } else if (l.t==='addition') { p.push({l:{t:'empty',o:null,n:null,c:''},r:l}); i++; }
+    else i++;
+  }
+  return p;
+}
+
+function wdiff(a,b) {
+  if(!a||!b) return {oh:esc(a),nh:esc(b)};
+  const at=tok(a),bt=tok(b),lc=lcs(at,bt);
+  let ai=0,bi=0,li=0,oh='',nh='';
+  while(ai<at.length||bi<bt.length) {
+    if(li<lc.length&&ai<at.length&&bi<bt.length&&at[ai]===lc[li]&&bt[bi]===lc[li]) { oh+=esc(at[ai]);nh+=esc(bt[bi]);ai++;bi++;li++; }
+    else {
+      if(ai<at.length&&(li>=lc.length||at[ai]!==lc[li])){oh+=`<span class="wh">${esc(at[ai])}</span>`;ai++;}
+      if(bi<bt.length&&(li>=lc.length||bt[bi]!==lc[li])){nh+=`<span class="wh">${esc(bt[bi])}</span>`;bi++;}
+    }
+  }
+  return {oh,nh};
+}
+function tok(s){return s.match(/\S+|\s+/g)||[];}
+function lcs(a,b){const m=a.length,n=b.length,d=Array.from({length:m+1},()=>new Uint16Array(n+1));for(let i=1;i<=m;i++)for(let j=1;j<=n;j++)d[i][j]=a[i-1]===b[j-1]?d[i-1][j-1]+1:Math.max(d[i-1][j],d[i][j-1]);const r=[];let i=m,j=n;while(i>0&&j>0){if(a[i-1]===b[j-1]){r.unshift(a[i-1]);i--;j--;}else if(d[i-1][j]>d[i][j-1])i--;else j--;}return r;}
+
+function getLang(file) {
+  if (/\.py$/.test(file)) return 'py';
+  if (/\.(js|jsx|ts|tsx|mjs|cjs)$/.test(file)) return 'js';
+  return null;
+}
+
+const SH_PY = /(?<cmt>#.*)|(?<str>f?"""[\s\S]*?"""|f?'''[\s\S]*?'''|f?"(?:[^"\\]|\\.)*"|f?'(?:[^'\\]|\\.)*')|(?<dec>@[\w.]+)|(?<kw>\b(?:def|class|if|elif|else|for|while|return|import|from|as|with|try|except|finally|raise|yield|async|await|pass|break|continue|and|or|not|in|is|lambda|global|nonlocal|assert|del|match|case)\b)|(?<bi>\b(?:True|False|None|self|cls|super|__\w+__|print|len|range|list|dict|set|tuple|int|str|float|bool|type|isinstance|enumerate|zip|map|filter|sorted|reversed|any|all|open|property|staticmethod|classmethod|dataclass)\b)|(?<num>\b\d+\.?\d*(?:e[+-]?\d+)?\b)/gi;
+const SH_JS = /(?<cmt>\/\/.*)|(?<str>`(?:[^`\\]|\\.)*`|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(?<kw>\b(?:const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|class|extends|import|export|from|default|new|typeof|instanceof|try|catch|finally|throw|async|await|yield|of|in|void|delete)\b)|(?<bi>\b(?:true|false|null|undefined|NaN|Infinity|this|console|document|window|Math|Array|Object|String|Number|Promise|Map|Set|JSON|Error|RegExp|Date|parseInt|parseFloat|setTimeout|setInterval|require|module|process)\b)|(?<num>\b\d+\.?\d*(?:e[+-]?\d+)?\b)/gi;
+
+function hilite(raw, lang) {
+  if (!lang || !raw) return esc(raw);
+  const re = lang === 'py' ? SH_PY : SH_JS;
+  re.lastIndex = 0;
+  let result = '', last = 0, m;
+  while ((m = re.exec(raw)) !== null) {
+    result += esc(raw.slice(last, m.index));
+    const g = m.groups;
+    const cls = g.cmt != null ? 'cmt' : g.str != null ? 'str' : g.dec != null ? 'dec' : g.kw != null ? 'kw' : g.bi != null ? 'bi' : 'num';
+    result += `<span class="sh-${cls}">${esc(m[0])}</span>`;
+    last = m.index + m[0].length;
+  }
+  result += esc(raw.slice(last));
+  return result;
+}
+
+function unesc(s) {
+  return s.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'");
+}
+
+function shHtml(html, lang) {
+  if (!lang) return html;
+  const segs = html.split(/(<[^>]+>)/g);
+  return segs.map(s => s.startsWith('<') ? s : hilite(unesc(s), lang)).join('');
+}
+
+function detect(f) {
+  const added = f.hunks.flatMap(h=>h.lines.filter(l=>l.t==='addition').map(l=>({c:l.c,n:l.n})));
+  const block = added.map(a=>a.c).join('\n'), w=[];
+  for (const p of ANTI_PATTERNS) if(p.regex.test(block)) { w.push({...p,lines:added.filter(a=>p.regex.test(a.c)).map(a=>a.n)}); }
+  return w;
+}
+function warnSet(fi){const s=new Set();(S.warnings[fi]||[]).forEach(w=>w.lines.forEach(l=>s.add(l)));return s;}
+function isReviewed(i){return !S.reverted[i]&&(S.reviewed[i]||Object.keys(S.comments).some(k=>k.startsWith(i+'-')&&S.comments[k]));}
+
+function render(){renderPills();renderWarn();renderFiles();renderDiff();renderStats();renderProgress();showBar();}
+
+function renderPills() {
+  const el = document.getElementById('file-pills');
+  if (!S.files.length) { el.innerHTML=''; return; }
+  el.innerHTML = S.files.map((f,i) => {
+    const nm = f.file.split('/').pop(), hw=(S.warnings[i]||[]).length>0, rv=!!S.reverted[i], re=isReviewed(i);
+    let dot = '';
+    if(rv) dot='<span class="pill-dot reverted"></span>';
+    else if(re) dot='<span class="pill-dot reviewed"></span>';
+    else if(hw) dot='<span class="pill-dot warn"></span>';
+    return `<div class="file-pill ${i===S.active?'active':''}" onclick="sel(${i})">${dot}${esc(nm)}<span class="pill-stats">+${f.add} -${f.del}</span></div>`;
+  }).join('');
+}
+
+function renderWarn() {
+  const p = document.getElementById('warn-panel'); let w=[];
+  S.files.forEach((f,i)=>{if(S.reverted[i])return;(S.warnings[i]||[]).forEach(x=>w.push({...x,file:f.file,fi:i}));});
+  if(!w.length){p.classList.add('empty');p.innerHTML='';return;}
+  p.classList.remove('empty');
+  p.innerHTML='<div class="panel-title">Warnings ('+w.length+')</div>'+w.map(x=>`<div class="warn-row" onclick="jumpWarn(${x.fi},${x.lines[0]||0})"><div class="warn-dot"></div><div>${esc(x.label)}<span class="warn-file">${esc(x.file)}</span></div></div>`).join('');
+}
+
+function renderFiles() {
+  const p = document.getElementById('files-panel');
+  if(!S.files.length){p.classList.add('empty');p.innerHTML='';return;}
+  p.classList.remove('empty');
+  const rc=Object.keys(S.reverted).length;
+  let h='<div class="panel-title">Files ('+S.files.length+')</div>';
+  h+=S.files.map((f,i)=>{const nm=f.file.split('/').pop(),rv=!!S.reverted[i];return `<div class="file-row"><span class="file-row-name ${rv?'struck':''}" title="${esc(f.file)}">${esc(nm)}</span>${rv?`<button class="pill-btn undo" onclick="undoRev(${i})">undo</button>`:`<button class="pill-btn revert" onclick="rev(${i})">revert</button>`}</div>`;}).join('');
+  if(rc>0&&rc<S.files.length) h+=`<button class="revert-all" onclick="revAll()">Revert all</button>`;
+  p.innerHTML=h;
+}
+
+function renderProgress() {
+  const el=document.getElementById('progress-strip');
+  if(!S.files.length){el.classList.remove('active');return;}
+  el.classList.add('active');
+  const rc=Object.keys(S.reverted).length, tot=S.files.length-rc;
+  const rev=S.files.filter((_,i)=>isReviewed(i)).length;
+  document.getElementById('p-dots').innerHTML=S.files.map((_,i)=>{let c='pending';if(S.reverted[i])c='reverted';else if(i===S.active)c='current';else if(isReviewed(i))c='reviewed';return `<span class="p-dot ${c}" onclick="sel(${i})" title="${S.files[i].file}"></span>`;}).join('');
+  document.getElementById('p-fill').style.width=(tot>0?rev/tot*100:0)+'%';
+  document.getElementById('p-label').textContent=rev+'/'+tot;
+}
+
+function renderDiff() {
+  if(!S.files.length)return;
+  const f=S.files[S.active],rv=!!S.reverted[S.active],wl=warnSet(S.active);
+  document.getElementById('ctx-bar').style.display='flex';
+  document.getElementById('ctx-file').textContent=f.file;
+  const bg=document.getElementById('ctx-badges'),fw=S.warnings[S.active]||[];
+  let bh=fw.map(w=>`<span class="badge-sm badge-warn">${esc(w.label)}</span>`).join('');
+  if(rv) bh+='<span class="badge-sm badge-reverted">REVERTED</span>';
+  bg.innerHTML=bh;
+  document.getElementById('mb-focus').classList.toggle('on',S.focus);
+  document.getElementById('mb-collapse').classList.toggle('on',S.collapse);
+  document.getElementById('col-labels').style.display='flex';
+  document.getElementById('diff-scroll').style.display='block';
+  document.getElementById('diff-scroll').classList.toggle('focus-on',S.focus);
+
+  if(rv){document.getElementById('dl').innerHTML='';document.getElementById('dr').innerHTML=`<div class="reverted-view"><div>Marked for revert</div><span onclick="undoRev(${S.active})">undo</span></div>`;return;}
+  S.reviewed[S.active]=true;
+  let lh='',rh='';
+
+  for(let hi=0;hi<f.hunks.length;hi++){
+    const hk=f.hunks[hi],lb=esc(hk.ctx||hk.header);
+    lh+=`<div class="hunk-row">${lb}</div>`;rh+=`<div class="hunk-row">${lb}</div>`;
+    const ps=pairs(hk.lines);let cs=-1,cc=0;
+    for(let pi=0;pi<ps.length;pi++){
+      const pr=ps[pi],ic=pr.l.t==='context',nc=pi+1<ps.length&&ps[pi+1].l.t==='context';
+      if(S.collapse&&ic){if(cs===-1)cs=pi;cc++;if(!nc||pi===ps.length-1){if(cc>3){emit(ps[cs],hi);const ek=S.active+'-'+hi+'-'+cs;if(S.expanded[ek]){for(let ci=cs+1;ci<cs+cc-1;ci++)emit(ps[ci],hi);}else{const n=cc-2;lh+=`<div class="fold-row" onclick="expand('${ek}')">... ${n} line${n!==1?'s':''} ...</div>`;rh+=`<div class="fold-row" onclick="expand('${ek}')">... ${n} line${n!==1?'s':''} ...</div>`;}emit(ps[cs+cc-1],hi);}else{for(let ci=cs;ci<cs+cc;ci++)emit(ps[ci],hi);}cs=-1;cc=0;}continue;}
+      cs=-1;cc=0;emit(pr,hi);
+    }
+  }
+
+  function emit(pr,hi){
+    const id=S.active+'-'+(pr.r.n??'x')+'-'+(pr.l.o??'x'),hc=!!S.comments[id],ed=S.editing===id;
+    const lw=pr.l.t==='deletion'&&wl.has(pr.l.o),rw=pr.r.t==='addition'&&wl.has(pr.r.n);
+    let lc,rc;const lang=getLang(f.file);
+    if(pr.l.t==='deletion'&&pr.r.t==='addition'){const w=wdiff(pr.l.c,pr.r.c);lc=shHtml(w.oh,lang);rc=shHtml(w.nh,lang);}else{lc=hilite(pr.l.c,lang);rc=hilite(pr.r.c,lang);}
+    lh+=`<div class="d-line ${pr.l.t} ${lw?'has-warning':''}" data-line-id="${id}"><div class="d-num">${pr.l.o??''}</div><div class="d-code">${lc}</div></div>`;
+    rh+=`<div class="d-line ${pr.r.t} ${rw?'has-warning':''} ${hc?'has-comment':''}" data-line-id="${id}"><button class="cmt-btn" onclick="event.stopPropagation();openCmt('${id}')"></button><div class="d-num">${pr.r.n??''}</div><div class="d-code">${rc}</div></div>`;
+    if(ed){
+      rh+=`<div class="cmt-inline"><textarea id="ta-${id}" placeholder="What's wrong here?">${esc(S.comments[id]||'')}</textarea><div class="cmt-actions">${hc&&S.comments[id]?'<button class="del" onclick="delCmt(\''+id+'\')">Delete</button>':''}<button onclick="cancelCmt()">Cancel</button><button class="save" onclick="saveCmt('${id}')">Save</button></div></div>`;
+      lh+=`<div class="cmt-inline" style="visibility:hidden;pointer-events:none"><textarea style="min-height:48px"></textarea><div class="cmt-actions"><button>x</button></div></div>`;
+    } else if(hc&&S.comments[id]){
+      rh+=`<div class="cmt-saved"><div class="cmt-saved-text">${esc(S.comments[id])}</div><div class="cmt-saved-acts"><button onclick="editCmt('${id}')">edit</button><button onclick="delCmt('${id}')">delete</button></div></div>`;
+      lh+=`<div class="cmt-saved" style="visibility:hidden;pointer-events:none"><div class="cmt-saved-text">&nbsp;</div></div>`;
+    }
+  }
+
+  document.getElementById('dl').innerHTML=lh;document.getElementById('dr').innerHTML=rh;
+  const dl=document.getElementById('dl'),dr=document.getElementById('dr');let sy=false;
+  dl.onscroll=()=>{if(!sy){sy=true;dr.scrollTop=dl.scrollTop;sy=false;}};
+  dr.onscroll=()=>{if(!sy){sy=true;dl.scrollTop=dr.scrollTop;sy=false;}};
+  if(S.editing){const ta=document.getElementById('ta-'+S.editing);if(ta){ta.focus();ta.selectionStart=ta.value.length;}}
+}
+
+function renderStats(){
+  let a=0,d=0,w=0;S.files.forEach((f,i)=>{if(S.reverted[i])return;a+=f.add;d+=f.del;w+=(S.warnings[i]||[]).length;});
+  const ac=S.files.length-Object.keys(S.reverted).length;
+  document.getElementById('s-files').textContent=ac+(ac===1?' file':' files');
+  document.getElementById('s-add').textContent='+'+a;document.getElementById('s-del').textContent='-'+d;
+  document.getElementById('s-warn').textContent=w+(w===1?' warning':' warnings');
+}
+function showBar(){const b=document.getElementById('float-bar');if(!S.files.length)b.classList.remove('active');else b.classList.add('active');}
+
+function copyRevert(){
+  const rf=Object.keys(S.reverted).map(i=>S.files[i]?.file).filter(Boolean);
+  if(!rf.length){showToast('No files marked for revert');return;}
+  const cmd='git checkout HEAD -- '+rf.join(' ');
+  navigator.clipboard.writeText(cmd).then(()=>showToast('Copied: '+cmd));
+}
+
+function sel(i){S.active=i;S.editing=null;render();}
+function toggleFocusMode(){S.focus=!S.focus;renderDiff();}
+function toggleCollapseContext(){S.collapse=!S.collapse;S.expanded={};renderDiff();}
+function expand(k){S.expanded[k]=true;renderDiff();}
+function rev(i){S.reverted[i]=true;render();showToast('Marked '+S.files[i].file.split('/').pop()+' for revert');}
+function undoRev(i){delete S.reverted[i];render();}
+function revAll(){S.files.forEach((_,i)=>{S.reverted[i]=true;});render();showToast('All files marked for revert');}
+function openCmt(id){S.editing=id;if(!S.comments[id])S.comments[id]='';renderDiff();}
+function editCmt(id){S.editing=id;renderDiff();}
+function saveCmt(id){const ta=document.getElementById('ta-'+id);if(ta){const v=ta.value.trim();if(v)S.comments[id]=v;else delete S.comments[id];}S.editing=null;render();}
+function cancelCmt(){const id=S.editing;if(id&&!S.comments[id])delete S.comments[id];S.editing=null;renderDiff();}
+function delCmt(id){delete S.comments[id];S.editing=null;render();}
+function clearAll(){
+  S={files:[],active:0,comments:{},warnings:{},editing:null,reviewed:{},reverted:{},focus:true,collapse:false,expanded:{}};
+  document.getElementById('paste-overlay').classList.remove('hidden');
+  document.getElementById('ctx-bar').style.display='none';
+  document.getElementById('col-labels').style.display='none';
+  document.getElementById('diff-scroll').style.display='none';
+  document.getElementById('progress-strip').classList.remove('active');
+  document.getElementById('float-bar').classList.remove('active');
+  render();
+}
+function jumpWarn(fi,ln){S.active=fi;S.editing=null;render();setTimeout(()=>{const el=document.querySelector('.diff-pane:last-child .d-line.has-warning');if(el)el.scrollIntoView({behavior:'smooth',block:'center'});},50);}
+function showToast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800);}
+function esc(s){return s?s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'):''}
+
+document.addEventListener('keydown',(e)=>{
+  if(e.target.tagName==='TEXTAREA'){if(e.key==='Escape')cancelCmt();if((e.metaKey||e.ctrlKey)&&e.key==='Enter'&&S.editing){e.preventDefault();saveCmt(S.editing);}return;}
+  if(!S.files.length)return;
+  if(e.key==='ArrowRight'&&S.active<S.files.length-1)sel(S.active+1);
+  if(e.key==='ArrowLeft'&&S.active>0)sel(S.active-1);
+  if(e.key==='n'||e.key==='N'){const els=document.querySelectorAll('.diff-pane:last-child .d-line.has-warning');if(els.length){const sc=document.getElementById('diff-scroll');let tgt=els[0];for(const el of els)if(el.offsetTop>sc.scrollTop+100){tgt=el;break;}tgt.scrollIntoView({behavior:'smooth',block:'center'});}}
+  if(e.key==='f')toggleFocusMode();
+  if(e.key==='c')toggleCollapseContext();
+  if(e.key==='r')rev(S.active);
+  if(e.key==='u')undoRev(S.active);
+  if(e.key==='Escape')cancelCmt();
+});
+
+document.addEventListener('paste',(e)=>{
+  if(e.target.tagName==='TEXTAREA')return;
+  const t=e.clipboardData.getData('text');if(!t||!t.includes('diff --git'))return;
+  e.preventDefault();
+  S.files=parseDiff(t);S.active=0;S.comments={};S.editing=null;S.reviewed={};S.reverted={};S.expanded={};S.warnings={};
+  S.files.forEach((f,i)=>{S.warnings[i]=detect(f);});
+  document.getElementById('paste-overlay').classList.add('hidden');render();
+});
+
+render();
+</script>
+</body>
+</html>

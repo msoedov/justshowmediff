@@ -1,0 +1,28 @@
+version: 2
+builds:
+  - main: .
+    binary: justshowmediff
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+
+brews:
+  - repository:
+      owner: msoedov
+      name: homebrew-tap
+    homepage: https://github.com/msoedov/justshowmediff
+    description: Show git diff in a beautiful HTML viewer
+
+checksum:
+  name_template: checksums.txt
