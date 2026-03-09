@@ -1,10 +1,22 @@
 # justshowmediff
 
-Show git diff in a beautiful UI viewer. Single binary, no server, opens in your browser.
+Review AI-generated code changes in your browser. No IDE needed.
 
-Zero dependencies -- no JS frameworks, no CSS libraries, everything is self-contained in one HTML file.
+Claude Code, Codex, and other AI agents write code on your machine -- but `git diff` in the terminal is hard to read, and firing up a full IDE just to review changes is overkill. justshowmediff generates a self-contained HTML file and opens it. Side-by-side diff, syntax highlighting, one command.
 
 ![justshowmediff screenshot](docs/screenshot.png)
+
+### The workflow
+
+You don't edit the diff -- you edit the prompt.
+
+1. Agent writes code
+2. `justshowmediff` -- review in browser
+3. Tell the agent what's wrong
+4. Repeat until it looks right
+5. Commit
+
+Works from anywhere: terminal, SSH, phone. The HTML file is self-contained -- share it, open it on any device.
 
 ## Install
 
@@ -33,27 +45,14 @@ git diff | justshowmediff           # pipe from stdin
 justshowmediff -o review.html       # write to file instead of opening
 ```
 
-## Why
+## Why not X?
 
-`git diff` output is hard to read in the terminal. Side-by-side viewers need a running server or heavy IDE. This tool generates a single HTML file and opens it -- no dependencies, no server, no config. Just the diff.
+- `git diff` -- hard to read, no side-by-side, no syntax highlighting
+- GitHub PR view -- requires a push, a PR, and internet
+- VS Code / IDE -- heavy, need the full editor running
+- diff-so-fancy / delta -- still terminal-based, still line-by-line
 
-Built for workflows where you don't have a full editor open:
-
-- **Claude Code** -- review AI-generated changes before committing. Add `justshowmediff` to your post-tool hooks or run it manually between iterations.
-- **Codex / headless agents** -- when an agent writes code on your machine without an IDE, pipe the diff to get a visual review before accepting.
-- **Telegram / SSH / remote** -- working from a phone or a bare terminal? The HTML file is self-contained, share it or open it anywhere with a browser.
-
-### Readonly code review workflow
-
-You don't edit the diff -- you edit the prompt. Review the changes visually, then tell the agent what to fix. The cycle looks like:
-
-1. Agent writes code
-2. `justshowmediff` -- review in browser
-3. Tell the agent what's wrong
-4. Repeat until it looks right
-5. Commit
-
-No IDE needed. You stay in the terminal, the browser shows you what changed.
+justshowmediff: single binary, zero dependencies, no server, no config. Opens in 200ms.
 
 ### Claude Code skill
 
