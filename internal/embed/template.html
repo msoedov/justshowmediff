@@ -87,9 +87,14 @@ function parseDiff(raw) {
   const files = [], lines = raw.split('\n');
   let cf = null, ch = null, ol = 0, nl = 0;
   for (const l of lines) {
-    if (l.startsWith('diff --git')) { cf = { file:'', hunks:[], add:0, del:0 }; files.push(cf); continue; }
+    if (l.startsWith('diff --git')) { const gm = l.match(/diff --git a\/(.+) b\//); cf = { file: gm ? gm[1] : '', hunks:[], add:0, del:0, status:'modified' }; files.push(cf); continue; }
+    if (!cf) continue;
+    if (l.startsWith('new file')) { cf.status = 'added'; continue; }
+    if (l.startsWith('deleted file')) { cf.status = 'deleted'; continue; }
+    if (l.startsWith('rename from')) { cf.status = 'renamed'; continue; }
+    if (l.startsWith('rename to')) { continue; }
     if (l.startsWith('---')) continue;
-    if (l.startsWith('+++')) { if (cf) cf.file = l.replace(/^\+\+\+\s+[ab]\//,'').replace(/^\+\+\+\s+/,''); continue; }
+    if (l.startsWith('+++')) { const fn = l.replace(/^\+\+\+\s+[ab]\//,'').replace(/^\+\+\+\s+/,''); if (fn !== '/dev/null') cf.file = fn; continue; }
     if (l.startsWith('@@')) { const m = l.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)/); if (m&&cf) { ol=+m[1]; nl=+m[2]; ch={header:l,ctx:m[3].trim(),lines:[]}; cf.hunks.push(ch); } continue; }
     if (!ch) continue;
     if (l.startsWith('+')) { ch.lines.push({t:'addition',o:null,n:nl,c:l.substring(1)}); nl++; if(cf)cf.add++; }
@@ -136,39 +141,10 @@ function wdiff(a,b) {
 function tok(s){return s.match(/\S+|\s+/g)||[];}
 function lcs(a,b){const m=a.length,n=b.length,d=Array.from({length:m+1},()=>new Uint16Array(n+1));for(let i=1;i<=m;i++)for(let j=1;j<=n;j++)d[i][j]=a[i-1]===b[j-1]?d[i-1][j-1]+1:Math.max(d[i-1][j],d[i][j-1]);const r=[];let i=m,j=n;while(i>0&&j>0){if(a[i-1]===b[j-1]){r.unshift(a[i-1]);i--;j--;}else if(d[i-1][j]>d[i][j-1])i--;else j--;}return r;}
 
-function getLang(file) {
-  if (/\.py$/.test(file)) return 'py';
-  if (/\.(js|jsx|ts|tsx|mjs|cjs)$/.test(file)) return 'js';
-  return null;
-}
-
-const SH_PY = /(?<cmt>#.*)|(?<str>f?"""[\s\S]*?"""|f?'''[\s\S]*?'''|f?"(?:[^"\\]|\\.)*"|f?'(?:[^'\\]|\\.)*')|(?<dec>@[\w.]+)|(?<kw>\b(?:def|class|if|elif|else|for|while|return|import|from|as|with|try|except|finally|raise|yield|async|await|pass|break|continue|and|or|not|in|is|lambda|global|nonlocal|assert|del|match|case)\b)|(?<bi>\b(?:True|False|None|self|cls|super|__\w+__|print|len|range|list|dict|set|tuple|int|str|float|bool|type|isinstance|enumerate|zip|map|filter|sorted|reversed|any|all|open|property|staticmethod|classmethod|dataclass)\b)|(?<num>\b\d+\.?\d*(?:e[+-]?\d+)?\b)/gi;
-const SH_JS = /(?<cmt>\/\/.*)|(?<str>`(?:[^`\\]|\\.)*`|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(?<kw>\b(?:const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|class|extends|import|export|from|default|new|typeof|instanceof|try|catch|finally|throw|async|await|yield|of|in|void|delete)\b)|(?<bi>\b(?:true|false|null|undefined|NaN|Infinity|this|console|document|window|Math|Array|Object|String|Number|Promise|Map|Set|JSON|Error|RegExp|Date|parseInt|parseFloat|setTimeout|setInterval|require|module|process)\b)|(?<num>\b\d+\.?\d*(?:e[+-]?\d+)?\b)/gi;
-
-function hilite(raw, lang) {
-  if (!lang || !raw) return esc(raw);
-  const re = lang === 'py' ? SH_PY : SH_JS;
-  re.lastIndex = 0;
-  let result = '', last = 0, m;
-  while ((m = re.exec(raw)) !== null) {
-    result += esc(raw.slice(last, m.index));
-    const g = m.groups;
-    const cls = g.cmt != null ? 'cmt' : g.str != null ? 'str' : g.dec != null ? 'dec' : g.kw != null ? 'kw' : g.bi != null ? 'bi' : 'num';
-    result += `<span class="sh-${cls}">${esc(m[0])}</span>`;
-    last = m.index + m[0].length;
-  }
-  result += esc(raw.slice(last));
-  return result;
-}
+/* SYNTAX_PLACEHOLDER */
 
 function unesc(s) {
   return s.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'");
-}
-
-function shHtml(html, lang) {
-  if (!lang) return html;
-  const segs = html.split(/(<[^>]+>)/g);
-  return segs.map(s => s.startsWith('<') ? s : hilite(unesc(s), lang)).join('');
 }
 
 function isReviewed(i){return !S.reverted[i]&&(S.reviewed[i]||Object.keys(S.comments).some(k=>k.startsWith(i+'-')&&S.comments[k]));}
@@ -192,8 +168,31 @@ function renderFiles() {
   if(!S.files.length){p.classList.add('empty');p.innerHTML='';return;}
   p.classList.remove('empty');
   const rc=Object.keys(S.reverted).length;
+
+  // Group files by directory
+  const tree = {};
+  S.files.forEach((f,i) => {
+    const parts = f.file.split('/');
+    const dir = parts.length > 1 ? parts.slice(0,-1).join('/') : '.';
+    if (!tree[dir]) tree[dir] = [];
+    tree[dir].push(i);
+  });
+
+  const dirs = Object.keys(tree).sort();
   let h='<div class="panel-title">Files ('+S.files.length+')</div>';
-  h+=S.files.map((f,i)=>{const nm=f.file.split('/').pop(),rv=!!S.reverted[i];return `<div class="file-row"><span class="file-row-name ${rv?'struck':''}" title="${esc(f.file)}">${esc(nm)}</span>${rv?`<button class="pill-btn undo" onclick="undoRev(${i})">undo</button>`:`<button class="pill-btn revert" onclick="rev(${i})">revert</button>`}</div>`;}).join('');
+
+  for (const dir of dirs) {
+    if (dirs.length > 1 || dir !== '.') {
+      h += `<div class="tree-dir">${esc(dir)}/</div>`;
+    }
+    for (const i of tree[dir]) {
+      const f = S.files[i], nm = f.file.split('/').pop(), rv = !!S.reverted[i];
+      const active = i === S.active ? ' active' : '';
+      const sc = f.status === 'added' ? 'st-added' : f.status === 'deleted' ? 'st-deleted' : f.status === 'renamed' ? 'st-renamed' : 'st-modified';
+      const sl = f.status === 'added' ? 'A' : f.status === 'deleted' ? 'D' : f.status === 'renamed' ? 'R' : 'M';
+      h += `<div class="file-row${active}" onclick="sel(${i})"><span class="file-st ${sc}">${sl}</span><span class="file-row-name ${rv?'struck':''}" title="${esc(f.file)}">${esc(nm)}</span><span class="file-row-stats">+${f.add} -${f.del}</span></div>`;
+    }
+  }
   if(rc>0&&rc<S.files.length) h+=`<button class="revert-all" onclick="revAll()">Revert all</button>`;
   p.innerHTML=h;
 }

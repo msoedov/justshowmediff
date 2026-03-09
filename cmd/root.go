@@ -75,7 +75,53 @@ func getDiff(cmd *cobra.Command, args []string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("git diff: %s", strings.TrimSpace(string(out)))
 	}
-	return string(out), nil
+
+	diff := string(out)
+
+	// Include untracked files when showing unstaged changes (no extra args)
+	if !staged && len(args) == 0 {
+		untracked := untrackedDiff()
+		if untracked != "" {
+			diff += untracked
+		}
+	}
+
+	return diff, nil
+}
+
+func untrackedDiff() string {
+	out, err := exec.Command("git", "ls-files", "--others", "--exclude-standard").Output()
+	if err != nil {
+		return ""
+	}
+	files := strings.Split(strings.TrimSpace(string(out)), "\n")
+	var b strings.Builder
+	for _, f := range files {
+		if f == "" {
+			continue
+		}
+		content, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		lines := strings.Split(string(content), "\n")
+		// Skip binary files
+		for _, line := range lines {
+			if strings.Contains(line, "\x00") {
+				goto next
+			}
+		}
+		fmt.Fprintf(&b, "diff --git a/%s b/%s\n", f, f)
+		fmt.Fprintf(&b, "new file mode 100644\n")
+		fmt.Fprintf(&b, "--- /dev/null\n")
+		fmt.Fprintf(&b, "+++ b/%s\n", f)
+		fmt.Fprintf(&b, "@@ -0,0 +1,%d @@\n", len(lines))
+		for _, line := range lines {
+			fmt.Fprintf(&b, "+%s\n", line)
+		}
+	next:
+	}
+	return b.String()
 }
 
 func hasStdin() bool {

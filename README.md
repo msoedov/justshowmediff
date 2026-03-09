@@ -54,6 +54,25 @@ justshowmediff -o review.html       # write to file instead of opening
 
 justshowmediff: single binary, zero dependencies, no server, no config. Opens in 200ms.
 
+### Claude Code Stop hook (auto-review)
+
+Auto-open the diff every time Claude finishes working. Add to `.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "command": "justshowmediff 2>/dev/null || true"
+      }
+    ]
+  }
+}
+```
+
+Now every time Claude hands control back to you, the diff opens automatically in your browser.
+
 ### Claude Code skill
 
 Add a `/diff` slash command to Claude Code. Create `.claude/skills/diff.md`:

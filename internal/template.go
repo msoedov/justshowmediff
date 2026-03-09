@@ -9,11 +9,14 @@ import (
 	"strings"
 )
 
-//go:embed template.html
+//go:embed embed/template.html
 var templateHTML string
 
-//go:embed template.css
+//go:embed embed/template.css
 var templateCSS string
+
+//go:embed embed/syntax.js
+var syntaxJS string
 
 func WriteHTML(diff string, outPath string) (string, error) {
 	diffJSON, err := json.Marshal(diff)
@@ -49,6 +52,7 @@ func WriteHTML(diff string, outPath string) (string, error) {
 <meta property="og:type" content="website">`, ogDesc)
 
 	html := strings.Replace(templateHTML, "/* CSS_PLACEHOLDER */", templateCSS, 1)
+	html = strings.Replace(html, "/* SYNTAX_PLACEHOLDER */", syntaxJS, 1)
 	html = strings.Replace(html, "<!-- OG_PLACEHOLDER -->", ogMeta, 1)
 	html = strings.Replace(html, "render();\n</script>", "render();\n"+autoLoad+"\n</script>", 1)
 	// Hide paste overlay so link previews don't show "Paste a git diff"

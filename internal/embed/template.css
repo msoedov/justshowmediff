@@ -156,17 +156,30 @@ body {
   margin-bottom: 10px;
 }
 
-/* File list / revert */
+/* File tree */
+.tree-dir {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-3);
+  padding: 8px 8px 3px;
+  letter-spacing: 0.2px;
+}
+.tree-dir:first-child { padding-top: 0; }
+
+/* File list */
 .file-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 5px 8px;
+  gap: 6px;
+  padding: 4px 8px;
   margin: 1px 0;
   border-radius: var(--radius-sm);
+  cursor: pointer;
   transition: background 0.1s;
 }
 .file-row:hover { background: var(--surface-hover); }
+.file-row.active { background: var(--surface-raised); }
 .file-row-name {
   font-family: var(--mono);
   font-size: 12px;
@@ -174,8 +187,35 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
+  min-width: 0;
 }
 .file-row-name.struck { color: var(--red); text-decoration: line-through; opacity: 0.5; }
+.file-row-stats {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-3);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* File status badge */
+.file-st {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.st-modified { color: var(--accent); }
+.st-added { color: var(--green); }
+.st-deleted { color: var(--red); }
+.st-renamed { color: #60a5fa; }
 .pill-btn {
   padding: 2px 10px;
   border-radius: 100px;
