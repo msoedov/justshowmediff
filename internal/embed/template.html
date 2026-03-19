@@ -82,6 +82,7 @@
 let S = {
   files: [], active: 0, comments: {}, editing: null,
   reviewed: {}, reverted: {}, focus: true, collapse: false, expanded: {},
+  _openDirs: {},
 };
 
 function parseDiff(raw) {
@@ -179,19 +180,52 @@ function renderFiles() {
     tree[dir].push(i);
   });
 
+  // Merge sparse subdirs into their common parent
+  // e.g. dist/testing/a/index.html + dist/testing/b/index.html → group under dist/testing/
+  const parentCount = {};
+  for (const dir of Object.keys(tree)) {
+    if (dir === '.') continue;
+    const parts = dir.split('/');
+    if (parts.length < 2) continue;
+    const parent = parts.slice(0,-1).join('/');
+    if (!parentCount[parent]) parentCount[parent] = [];
+    parentCount[parent].push(dir);
+  }
+  for (const [parent, children] of Object.entries(parentCount)) {
+    if (children.length <= 3) continue;
+    if (!tree[parent]) tree[parent] = [];
+    for (const child of children) {
+      tree[parent].push(...tree[child]);
+      delete tree[child];
+    }
+  }
+
   const dirs = Object.keys(tree).sort();
   let h='<div class="panel-title">Files ('+S.files.length+')</div>';
 
   for (const dir of dirs) {
-    if (dirs.length > 1 || dir !== '.') {
-      h += `<div class="tree-dir">${esc(dir)}/</div>`;
+    const indices = tree[dir];
+    const showDir = dirs.length > 1 || dir !== '.';
+    const collapsible = showDir && indices.length > 5;
+    const hasActive = indices.includes(S.active);
+    const open = !collapsible || S._openDirs[dir] || hasActive;
+
+    if (showDir) {
+      if (collapsible) {
+        h += `<div class="tree-dir tree-dir-toggle${open?' open':''}" onclick="toggleDir('${esc(dir)}')">${esc(dir)}/ <span class="tree-dir-count">${indices.length}</span></div>`;
+      } else {
+        h += `<div class="tree-dir">${esc(dir)}/</div>`;
+      }
     }
-    for (const i of tree[dir]) {
-      const f = S.files[i], nm = f.file.split('/').pop(), rv = !!S.reverted[i];
-      const active = i === S.active ? ' active' : '';
-      const sc = f.status === 'added' ? 'st-added' : f.status === 'deleted' ? 'st-deleted' : f.status === 'renamed' ? 'st-renamed' : 'st-modified';
-      const sl = f.status === 'added' ? 'A' : f.status === 'deleted' ? 'D' : f.status === 'renamed' ? 'R' : 'M';
-      h += `<div class="file-row${active}" onclick="sel(${i})"><span class="file-st ${sc}">${sl}</span><span class="file-row-name ${rv?'struck':''}" title="${esc(f.file)}">${esc(nm)}</span><span class="file-row-stats">+${f.add} -${f.del}</span></div>`;
+    if (open) {
+      for (const i of indices) {
+        const f = S.files[i], rv = !!S.reverted[i];
+        const nm = dir !== '.' ? f.file.slice(dir.length+1) : f.file.split('/').pop();
+        const active = i === S.active ? ' active' : '';
+        const sc = f.status === 'added' ? 'st-added' : f.status === 'deleted' ? 'st-deleted' : f.status === 'renamed' ? 'st-renamed' : 'st-modified';
+        const sl = f.status === 'added' ? 'A' : f.status === 'deleted' ? 'D' : f.status === 'renamed' ? 'R' : 'M';
+        h += `<div class="file-row${active}" onclick="sel(${i})"><span class="file-st ${sc}">${sl}</span><span class="file-row-name ${rv?'struck':''}" title="${esc(f.file)}">${esc(nm)}</span><span class="file-row-stats">+${f.add} -${f.del}</span></div>`;
+      }
     }
   }
   if(rc>0&&rc<S.files.length) h+=`<button class="revert-all" onclick="revAll()">Revert all</button>`;
@@ -276,6 +310,7 @@ function copyRevert(){
   navigator.clipboard.writeText(cmd).then(()=>showToast('Copied: '+cmd));
 }
 
+function toggleDir(dir){S._openDirs[dir]=!S._openDirs[dir];renderFiles();}
 function sel(i){S.active=i;S.editing=null;render();}
 function toggleFocusMode(){S.focus=!S.focus;renderDiff();}
 function toggleCollapseContext(){S.collapse=!S.collapse;S.expanded={};renderDiff();}
@@ -289,7 +324,7 @@ function saveCmt(id){const ta=document.getElementById('ta-'+id);if(ta){const v=t
 function cancelCmt(){const id=S.editing;if(id&&!S.comments[id])delete S.comments[id];S.editing=null;renderDiff();}
 function delCmt(id){delete S.comments[id];S.editing=null;render();}
 function clearAll(){
-  S={files:[],active:0,comments:{},editing:null,reviewed:{},reverted:{},focus:true,collapse:false,expanded:{}};
+  S={files:[],active:0,comments:{},editing:null,reviewed:{},reverted:{},focus:true,collapse:false,expanded:{},_openDirs:{}};
   document.getElementById('paste-overlay').classList.remove('hidden');
   document.getElementById('ctx-bar').style.display='none';
   document.getElementById('col-labels').style.display='none';

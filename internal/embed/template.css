@@ -166,6 +166,10 @@ body {
   letter-spacing: 0.2px;
 }
 .tree-dir:first-child { padding-top: 0; }
+.tree-dir-toggle { cursor: pointer; }
+.tree-dir-toggle::before { content: '\25b6'; font-size: 8px; margin-right: 4px; display: inline-block; transition: transform 0.15s; }
+.tree-dir-toggle.open::before { transform: rotate(90deg); }
+.tree-dir-count { color: var(--text-4, #666); font-weight: 400; margin-left: 2px; }
 
 /* File list */
 .file-row {
