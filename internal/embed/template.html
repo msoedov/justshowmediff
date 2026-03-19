@@ -200,6 +200,16 @@ function renderFiles() {
     }
   }
 
+  // Sort within each group: small meaningful changes first, deleted/huge last
+  function filePriority(i) {
+    const f = S.files[i];
+    if (f.status === 'deleted') return 1000000;
+    return f.add + f.del;
+  }
+  for (const dir of Object.keys(tree)) {
+    tree[dir].sort((a,b) => filePriority(a) - filePriority(b));
+  }
+
   const dirs = Object.keys(tree).sort();
   let h='<div class="panel-title">Files ('+S.files.length+')</div>';
 
